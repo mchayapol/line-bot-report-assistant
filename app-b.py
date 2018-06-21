@@ -9,7 +9,13 @@ from intent import Intent
 # import intent.Intent
 
 from intent.Intent import (
-    StartReportIntent, EndReportIntent, DefaultIntent
+    StartReportIntent, EndReportIntent, 
+    ListReportIntent, ViewReportIntent,
+    DefaultIntent
+)
+
+from features.firebase import (
+    Report
 )
 
 from features.CarAnalytics import LicencePlate
@@ -49,6 +55,7 @@ latest_image_path = ""
 
 # State controller
 reportingUsers = {}
+reportList = []
 
 channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
@@ -179,8 +186,8 @@ def handle_join(event):
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    global latest_image_path    
-
+    global latest_image_path
+    global reportList
     
 
     if event.reply_token == "00000000000000000000000000000000":
@@ -250,7 +257,41 @@ def handle_message(event):
                 ]
             )
 
-    
+    if isinstance(userIntent, ViewReportIntent):        
+        id = int(userIntent.id)
+        print('id:',id)
+        (uid,dateStr) = reportList[id-1]
+        d,t = dateStr.split()
+        (ye,mo,da) = d.split('-')
+        (h,m,s) = t.split(':')
+        key = 'report-%s-%s-%s-%s-%s-%s-%s'%(uid,ye,mo,da,h,m,s)
+        print('Key:',key)
+        report = Report.viewReport(key)
+        line_bot_api.reply_message(
+            event.reply_token,
+            [
+                TextSendMessage(text=report)
+            ]
+        )
+        return
+
+    if isinstance(userIntent,ListReportIntent):
+        reportList = Report.listReports()
+        s = 'รายงานทั้งหมด\n'
+        i = 1
+        for r in reportList:
+            (uid,dateStr) = r
+            profile = line_bot_api.get_profile(uid)
+            s += "%d: %s (%s)\n" % (i,profile.display_name,dateStr)
+            i += 1
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            [
+                TextSendMessage(text=s)
+            ]
+        )
+        return
 
     if event.message.text == 'ออกไปได้แล้ว':
        if isinstance(event.source,SourceGroup):
