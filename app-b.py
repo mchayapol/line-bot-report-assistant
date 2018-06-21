@@ -4,6 +4,14 @@ import tempfile
 import os
 import sys
 
+import datetime, time
+from intent import Intent
+# import intent.Intent
+
+from intent.Intent import (
+    StartReportIntent, EndReportIntent, DefaultIntent
+)
+
 from features.CarAnalytics import LicencePlate
 
 from linebot import (
@@ -38,6 +46,9 @@ import oil_price
 app = Flask(__name__)
 
 latest_image_path = ""
+
+# State controller
+reportingUsers = {}
 
 channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
@@ -85,14 +96,18 @@ def default_action():
     for p in l:
         s += "%s %f บาท\n"%(p[0],p[1])
     return s
-
+    
 def saveToFirebase(event):
     ref = db.reference('/report')
     ref.push(json.loads(event.as_json_string()))
 
 def saveFirebase(event,uid):
     ref = db.reference('/registration-'+uid)
-    ref.push(event)
+    ref.push(json.loads(event.as_json_string()))
+
+def saveToFirebase(catalog,event):
+    ref = db.reference(catalog)
+    ref.push(json.loads(event.as_json_string()))
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -171,7 +186,7 @@ def handle_message(event):
     if event.reply_token == "00000000000000000000000000000000":
         return "OK"
 
-    saveToFirebase(event)
+    # saveToFirebase(event)
     #resume exiting 
     print(conversation.keys())
     uid = event.source.user_id
@@ -191,15 +206,40 @@ def handle_message(event):
             del conversation[uid]
         return
 
+    userIntent = Intent.evaluateIntent(event.message.text)
+    if uid in reportingUsers:
+        if isinstance(userIntent, EndReportIntent):
+            profile = line_bot_api.get_profile(uid)
+            del reportingUsers[uid]
+            line_bot_api.reply_message(
+                event.reply_token,
+                [
+                    TextSendMessage(text='บันทึกเสร็จสิ้นค่ะ คุณ%s'%profile.display_name)
+                ]
+            )
+            return
+        catalog = reportingUsers[uid]
+        saveToFirebase(catalog,event)
+        print('Saving to firebase')
+        return
 
+    if isinstance(userIntent, StartReportIntent):
+        profile = line_bot_api.get_profile(uid)
+        dateStr = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+        reportingUsers[uid] = "report-%s-%s"%(uid,dateStr)
+        line_bot_api.reply_message(
+            event.reply_token,
+            [
+                TextSendMessage(text='กำลังจดบันทึกให้ค่ะ คุณ%s'%profile.display_name)
+            ]
+        )
+        return
 
-    if event.message.text == 'result':
-        uid = event.source.user_id
-        rego = None
+        # rego = None
 
         if uid in conversation:
-            rego =conversation[uid]
-        else:
+            rego = conversation[uid]
+        else:        
             rego = keepdata()
             conversation[uid] = rego
             o = rego.handle(event.message.text)
