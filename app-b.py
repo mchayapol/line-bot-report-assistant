@@ -43,7 +43,7 @@ from linebot.models import (
 
 import firebase_admin
 from firebase_admin import (
-    credentials, db
+    credentials, db, storage
 )
 import json
 
@@ -72,7 +72,8 @@ handler = WebhookHandler(channel_secret)
 cred = credentials.Certificate('service_account.json')
 default_app = firebase_admin.initialize_app(cred,
 {
-    'databaseURL': 'https://stellar-utility-840.firebaseio.com/'
+    'databaseURL': 'https://stellar-utility-840.firebaseio.com/',
+    'storageBucket': 'stellar-utility-840.appspot.com'
 })
 
 conversation = {}
@@ -115,6 +116,12 @@ def saveFirebase(event,uid):
 def saveToFirebase(catalog,event):
     ref = db.reference(catalog)
     ref.push(json.loads(event.as_json_string()))
+
+def saveImageToFirebase(catalog,source_filename):
+    bucket = storage.bucket()
+    blob = bucket.blob("%s/%s"%(catalog,source_filename))
+    blob.upload_from_filename(source_filename)
+    return blob.public_url
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -364,17 +371,24 @@ def handle_content_message(event):
             tf.write(chunk)
         tempfile_path = tf.name
 
-    dist_path = tempfile_path + '.' + ext
-    dist_name = os.path.basename(dist_path)
-    os.rename(tempfile_path, dist_path)
+    dest_path = tempfile_path + '.' + ext
+    dest_name = os.path.basename(dest_path)
+    os.rename(tempfile_path, dest_path)
+
+    uid = event.source.user_id
+    if uid in reportingUsers:
+        catalog = reportingUsers[uid]
+        saveToFirebase(catalog,event)
+        imageURL = saveImageToFirebase(catalog,dest_path)
+        print('Saved image to firebase:',imageURL)
+        return
 
     # Save image path
-    latest_image_path = dist_path
+    latest_image_path = dest_path
     line_bot_api.reply_message(
         event.reply_token, [
             TextSendMessage(text='เก็บรูปให้แล้วค่ะ')
         ])
-
 
 
 if __name__ == "__main__":
