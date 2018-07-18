@@ -31,9 +31,6 @@ from linebot.exceptions import (
 #     Registration
 #)
 
-from test.intent.keepdata import(
-     keepdata
-)
 
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
